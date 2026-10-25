@@ -1,68 +1,77 @@
 <!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>철이맵 · 배송지도</title><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><style>*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f4f7fa;color:#182536}header{display:flex;align-items:center;gap:7px;flex-wrap:wrap;background:white;padding:9px}button,input{font:inherit;border:1px solid #b9c4d0;border-radius:9px;padding:8px;background:white}button{cursor:pointer}button.primary{background:#1769d2;color:white;border:0}.info{background:white;padding:7px 10px;font-size:12px}#map{height:calc(100dvh - 125px);min-height:320px}.panel{display:none;position:fixed;z-index:1000;bottom:16px;left:12px;right:12px;max-width:440px;background:white;border-radius:14px;padding:14px;box-shadow:0 5px 25px #0004}.panel.show{display:block}.row{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.small{font-size:12px;color:#576777}.dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:3px}.leaflet-tooltip.address{background:#fffdf0;color:#222;border:1px solid #aaa;font-weight:600;font-size:11px;padding:1px 3px;box-shadow:none}.leaflet-tooltip.address:before{display:none}#file{display:none}</style></head><body><header><strong>🚚 철이맵</strong><button id="follow" class="primary">📍 내 위치</button><button id="sat">🛰️ 위성</button><button id="add">＋ 핀 추가</button><button id="searchbtn">🔎 주소 검색</button><button id="import">📂 주소 가져오기</button><button id="stop" style="display:none">⏹ 변환 중지</button><button id="backup">💾 백업</button><button id="reset">🔄 상태 초기화</button><input id="file" type="file" accept=".csv,.json,text/csv,application/json"></header><div class="info"><span class="dot" style="background:#9299a5"></span>없음 <span class="dot" style="background:#e44444"></span>예정 <span class="dot" style="background:#19a35a"></span>완료　<span id="counts"></span><br><span id="status" class="small">주소 CSV를 업로드하면 자동으로 좌표를 찾아 핀을 표시합니다.</span></div><div id="searchbox" style="display:none;background:white;padding:10px;position:relative;z-index:999"><input id="query" placeholder="예: 북면 박문수길 57" style="width:70%;max-width:420px"><button id="go">검색</button><div id="results" style="max-height:160px;overflow:auto"></div></div><div id="map"></div><div class="panel" id="panel"><strong id="title"></strong><div id="coords" class="small"></div><div class="row"><button data-state="none">⚪ 없음</button><button data-state="todo">🔴 배송 예정</button><button data-state="done">🟢 배송 완료</button><button id="nav">🚗 카카오맵 길찾기</button><button id="delete">삭제</button><button id="close">닫기</button></div></div><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>
 (()=>{'use strict';const $=s=>document.querySelector(s);let points=[],markers=[],selected=null,adding=false,watch=null,locationMarker=null,follow=true,satellite=false;try{points=JSON.parse(localStorage.getItem('cheori-points')||'[]')}catch{};const map=L.map('map').setView([36.827,127.26],12);const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);const esri=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'});const color={none:'#9299a5',todo:'#e44444',done:'#19a35a'};function save(){try{localStorage.setItem('cheori-points',JSON.stringify(points))}catch(e){$('#status').textContent='저장 공간 부족: 백업 후 핀 수를 줄여주세요.'}const todo=points.filter(p=>p.state==='todo').length,done=points.filter(p=>p.state==='done').length;$('#counts').textContent=`전체 ${points.length} · 예정 ${todo} · 완료 ${done}`;}function pin(p){return L.divIcon({className:'',html:`<svg width="25" height="34" viewBox="0 0 34 42"><path d="M17 2C8 2 2 9 2 18c0 11 15 22 15 22s15-11 15-22C32 9 26 2 17 2Z" fill="${color[p.state]||color.none}" stroke="white" stroke-width="2"/><circle cx="17" cy="17" r="5" fill="white"/></svg>`,iconSize:[25,34],iconAnchor:[12,32]})}function render(){markers.forEach(m=>map.removeLayer(m));markers=[];points.forEach(p=>{if(!Number.isFinite(+p.lat)||!Number.isFinite(+p.lng))return;const m=L.marker([+p.lat,+p.lng],{icon:pin(p)}).addTo(map).on('click',()=>openPoint(p.id));if(p.name)m.bindTooltip(p.name,{permanent:false,direction:'top',className:'address'});markers.push(m)});save()}function openPoint(id){selected=points.find(p=>p.id===id);if(!selected)return;$('#title').textContent=selected.name||'배송지';$('#coords').textContent=`${Number(selected.lat).toFixed(6)}, ${Number(selected.lng).toFixed(6)}`;$('#panel').classList.add('show')}map.on('click',e=>{if(!adding)return;adding=false;$('#add').textContent='＋ 핀 추가';const name=prompt('배송지 이름 또는 주소','새 배송지');if(name===null)return;const p={id:crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random()),name:name.trim()||'새 배송지',lat:e.latlng.lat,lng:e.latlng.lng,state:'none'};points.push(p);render();openPoint(p.id)});$('#add').onclick=()=>{adding=!adding;$('#add').textContent=adding?'지도에서 위치 터치':'＋ 핀 추가';$('#status').textContent=adding?'원하는 위치를 지도에서 터치하세요.':'핀 추가 취소'};document.querySelectorAll('[data-state]').forEach(b=>b.onclick=()=>{if(!selected)return;selected.state=b.dataset.state;render();$('#panel').classList.remove('show')});$('#close').onclick=()=>$('#panel').classList.remove('show');$('#delete').onclick=()=>{if(!selected||!confirm('이 핀을 삭제할까요?'))return;points=points.filter(p=>p.id!==selected.id);render();$('#panel').classList.remove('show')};$('#sat').onclick=()=>{satellite=!satellite;if(satellite){map.removeLayer(osm);esri.addTo(map)}else{map.removeLayer(esri);osm.addTo(map)}$('#sat').textContent=satellite?'🗺️ 일반':'🛰️ 위성'};$('#nav').onclick=()=>{if(!selected)return;window.open('https://map.kakao.com/link/to/'+encodeURIComponent(selected.name||'배송지')+','+selected.lat+','+selected.lng,'_blank','noopener')};$('#follow').onclick=()=>{if(watch!==null){navigator.geolocation.clearWatch(watch);watch=null;$('#follow').textContent='📍 내 위치';return}if(!navigator.geolocation){alert('위치 기능을 사용할 수 없습니다.');return}watch=navigator.geolocation.watchPosition(pos=>{const ll=[pos.coords.latitude,pos.coords.longitude];if(!locationMarker){locationMarker=L.circleMarker(ll,{radius:9,color:'white',weight:3,fillColor:'#2675ec',fillOpacity:1}).addTo(map).bindPopup('현재 위치')}else locationMarker.setLatLng(ll);if(follow)map.panTo(ll);$('#status').textContent=`현재 위치 추적 중 · 오차 약 ${Math.round(pos.coords.accuracy)}m`},e=>{$('#status').textContent='위치 오류: '+e.message},{enableHighAccuracy:true,maximumAge:2000,timeout:15000});$('#follow').textContent='⏹ 위치 중지'};map.on('dragstart',()=>{follow=false});$('#backup').onclick=()=>{const blob=new Blob([JSON.stringify(points,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cheori-map-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};$('#reset').onclick=()=>{if(!confirm('모든 핀의 배송 상태를 없음으로 바꿀까요? 핀은 유지됩니다.'))return;points.forEach(p=>p.state='none');render()};// 주소 변환: 카카오 지도 JS 지오코더 우선, 실패 시 OSM 검색 사용
-let geocoderPromise;let stopImport=false;$("#stop").onclick=()=>{stopImport=true;$("#status").textContent="중지 요청 중…"};
-function kakaoGeocoder(){
- if(geocoderPromise)return geocoderPromise;
- geocoderPromise=new Promise(resolve=>{
-  const timer=setTimeout(()=>resolve(null),7000);
-  function ready(){try{kakao.maps.load(()=>{clearTimeout(timer);resolve(kakao.maps.services?new kakao.maps.services.Geocoder():null)})}catch(e){clearTimeout(timer);resolve(null)}}
-  if(window.kakao&&kakao.maps){ready();return}
-  const script=document.createElement('script');
-  script.src='https://dapi.kakao.com/v2/maps/sdk.js?appkey=2e03e1ad3796af4499049d00cee22ec8&libraries=services&autoload=false';
-  script.onload=ready;script.onerror=()=>{clearTimeout(timer);resolve(null)};document.head.appendChild(script);
- });return geocoderPromise;
-}
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+ let geocoderPromise,stopImport=false;
+ $('#stop').onclick=()=>{stopImport=true;$('#status').textContent='중지 요청됨 · 현재 주소 처리 후 멈춥니다.'};
+ function kakaoGeocoder(){
+  if(geocoderPromise)return geocoderPromise;
+  geocoderPromise=new Promise(resolve=>{
+   let settled=false;const finish=v=>{if(settled)return;settled=true;clearTimeout(timer);resolve(v)};
+   const timer=setTimeout(()=>finish(null),9000);
+   const ready=()=>{try{kakao.maps.load(()=>finish(kakao.maps.services?new kakao.maps.services.Geocoder():null))}catch(e){finish(null)}};
+   if(window.kakao?.maps){ready();return}
+   const script=document.createElement('script');
+   script.src='https://dapi.kakao.com/v2/maps/sdk.js?appkey=2e03e1ad3796af4499049d00cee22ec8&libraries=services&autoload=false';
+   script.onload=ready;script.onerror=()=>finish(null);document.head.appendChild(script);
+  });return geocoderPromise;
+ }
+ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+ function variantsFor(address){
+  const clean=address.trim().replace(/\s+/g,' ').replace(/^충청남도\s+/,'충남 ');
+  const variants=[clean,clean.replace(/^충남\s+/,'충청남도 '),clean.replace(/^충남\s+천안시\s+동남구\s+/,'천안시 동남구 ')];
+  return [...new Set(variants)];
+ }
  async function locateAddress(address,geo){
-  if(!geo)return null;
-  const clean=address.trim().replace(/^(충청남도|충남)\s*/, '충남 ').replace(/\s+/g,' ');
-  const variants=[clean,clean.replace(/^충남\s*/, '충청남도 '),clean.replace(/^충남\s+천안시\s+동남구\s+/, '천안시 동남구 ')];
-  for(const q of [...new Set(variants)]){
-   const found=await new Promise(resolve=>{
-    let finished=false;const timer=setTimeout(()=>{if(!finished){finished=true;resolve(null)}},5500);
-    try{geo.addressSearch(q,(results,status)=>{if(finished)return;finished=true;clearTimeout(timer);resolve(status===kakao.maps.services.Status.OK&&results.length?{lat:Number(results[0].y),lng:Number(results[0].x)}:null)})}
-    catch(e){clearTimeout(timer);if(!finished){finished=true;resolve(null)}}
+  for(const q of variantsFor(address)){
+   const result=await new Promise(resolve=>{
+    let settled=false;const finish=v=>{if(settled)return;settled=true;clearTimeout(timer);resolve(v)};
+    const timer=setTimeout(()=>finish(null),6000);
+    try{geo.addressSearch(q,(rows,status)=>finish(status===kakao.maps.services.Status.OK&&rows.length?{lat:Number(rows[0].y),lng:Number(rows[0].x)}:null))}catch(e){finish(null)}
    });
-   if(found)return found;
+   if(result)return result;
   }
   return null;
  }
-function csvLine(s){let a=[],v='',q=false;for(let i=0;i<s.length;i++){let c=s[i];if(c==='"'){if(q&&s[i+1]==='"'){v+='"';i++}else q=!q}else if(c===','&&!q){a.push(v);v=''}else v+=c}a.push(v);return a}
-$('#import').onclick=()=>$('#file').click();
-$('#file').onchange=async e=>{
- const f=e.target.files[0];if(!f)return;
- $('#import').disabled=true;stopImport=false;$('#stop').style.display='inline-block';
- try{
-  const txt=await f.text();let rows;
-  if(f.name.toLowerCase().endsWith('.json'))rows=JSON.parse(txt);
-  else{const lines=txt.replace(/^\uFEFF/,'').trim().split(/\r?\n/);const head=csvLine(lines.shift()).map(x=>x.trim().toLowerCase());rows=lines.filter(Boolean).map(s=>{const cols=csvLine(s);return Object.fromEntries(head.map((h,i)=>[h,cols[i]]))})}
-  if(!Array.isArray(rows)||!rows.length)throw Error('파일에 주소 데이터가 없어요.');
-  if(!confirm(`${rows.length}개 배송지를 불러올까요? 기존 핀은 유지됩니다.\n주소만 있으면 자동으로 좌표를 검색합니다.`))return;
-  const geo=await kakaoGeocoder();if(!geo)throw Error('카카오 주소 검색 연결 실패! 카카오 개발자 콘솔에서 현재 사이트 도메인을 등록하고 JavaScript 키와 지도 서비스 활성화를 확인해 주세요. 124개 주소를 느린 보조 검색으로 돌리지 않도록 중단했습니다.');let added=[],failed=[];
-  const cacheKey='cheori-geocache-v1';let cache={};try{cache=JSON.parse(localStorage.getItem(cacheKey)||'{}')}catch{}
-  for(let i=0;i<rows.length;i++){if(stopImport)break;
-   const r=rows[i],address=String(r.address||r['주소']||'').trim();
-   const name=String(r.name||address||r['배송지']||`배송지 ${i+1}`);
-   let lat=Number(r.lat??r.latitude??r['위도']),lng=Number(r.lng??r.lon??r.longitude??r['경도']);
-   let coords=(lat&&lng&&Number.isFinite(lat)&&Number.isFinite(lng))?{lat,lng}:null;
-   if(!coords&&address){coords=cache[address]||null;if(!coords){
-     // 카카오 주소 검색이 실패하면 Nominatim으로 보완
-     if(!geo||!window.kakao?.maps?.services)usedFallback++;
-     coords=await locateAddress(address,geo);
-     if(coords){cache[address]=coords;try{localStorage.setItem(cacheKey,JSON.stringify(cache))}catch(e){}}
-     if(!geo||!coords)await sleep(1200);
-   }}
-   if(coords&&coords.lat>=-90&&coords.lat<=90&&coords.lng>=-180&&coords.lng<=180){
-    added.push({id:String(r.id||Date.now()+'-'+i+'-'+Math.random()),name,address,lat:coords.lat,lng:coords.lng,state:['none','todo','done'].includes(r.state)?r.state:'todo'});
-   }else failed.push(address||name);
-   $('#status').textContent=`주소 변환 중 ${i+1}/${rows.length} · 성공 ${added.length} · 실패 ${failed.length} · 핀 즉시 표시 중`;if(i%5===0)save();
-  }
-  render();if(added.length)map.fitBounds(L.latLngBounds(added.map(p=>[p.lat,p.lng])),{padding:[25,25]});
-  $('#status').textContent=`${stopImport?"중지됨":"불러오기 완료"}: ${added.length}곳 성공 / ${failed.length}곳 실패`;
-  if(failed.length){const blob=new Blob(['주소\n'+failed.map(a=>'"'+a.replaceAll('"','""')+'"').join('\n')],{type:'text/csv;charset=utf-8-sig'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='철이맵_좌표변환_실패주소.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
-  alert(`${added.length}곳 핀 등록 완료!${failed.length?`\n${failed.length}곳은 주소를 찾지 못해 실패 목록 CSV를 저장했어요.`:''}`);
- }catch(err){alert('가져오기 실패: '+err.message)}finally{$('#import').disabled=false;$('#stop').style.display='none';e.target.value=''}
-};
+ function csvLine(s){let a=[],v='',q=false;for(let i=0;i<s.length;i++){let c=s[i];if(c==='"'){if(q&&s[i+1]==='"'){v+='"';i++}else q=!q}else if(c===','&&!q){a.push(v);v=''}else v+=c}a.push(v);return a}
+ function downloadCsv(name,addresses){const csv='\uFEFF주소\r\n'+addresses.map(v=>'"'+String(v).replaceAll('"','""')+'"').join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500)}
+ $('#import').onclick=()=>$('#file').click();
+ $('#file').onchange=async e=>{
+  const f=e.target.files?.[0];if(!f)return;
+  $('#import').disabled=true;stopImport=false;$('#stop').style.display='inline-block';
+  try{
+   const txt=await f.text();let rows;
+   if(f.name.toLowerCase().endsWith('.json'))rows=JSON.parse(txt);
+   else{const lines=txt.replace(/^\uFEFF/,'').trim().split(/\r?\n/);const head=csvLine(lines.shift()).map(x=>x.trim().toLowerCase());rows=lines.filter(Boolean).map(line=>{const cols=csvLine(line);return Object.fromEntries(head.map((h,i)=>[h,(cols[i]||'').trim()]))})}
+   if(!Array.isArray(rows)||!rows.length)throw Error('파일에 주소가 없습니다.');
+   if(!confirm(`${rows.length}개 주소를 불러올까요?\n기존 핀은 유지하고 같은 주소는 중복 등록하지 않습니다.`))return;
+   const geo=await kakaoGeocoder();
+   if(!geo)throw Error('카카오 주소 검색 연결 실패. Netlify 사이트 주소를 카카오 개발자 콘솔의 Web 도메인에 등록하고 JavaScript 키·지도 사용 설정을 확인해 주세요.');
+   let cache={};const cacheKey='cheori-geocache-v1';try{cache=JSON.parse(localStorage.getItem(cacheKey)||'{}')}catch{}
+   const existing=new Set(points.map(p=>String(p.address||p.name||'').trim()));
+   let success=0,failed=[],duplicates=0;const added=[];
+   for(let i=0;i<rows.length;i++){
+    if(stopImport)break;
+    const r=rows[i],address=String(r.address||r['주소']||'').trim(),name=String(r.name||r['배송지']||address||`배송지 ${i+1}`);
+    if(!address&&!r.lat){failed.push(name);continue}
+    if(existing.has(address)){duplicates++;$('#status').textContent=`처리 ${i+1}/${rows.length} · 성공 ${success} · 실패 ${failed.length} · 중복 ${duplicates}`;continue}
+    let lat=Number(r.lat??r.latitude??r['위도']),lng=Number(r.lng??r.lon??r.longitude??r['경도']);
+    let coords=(Number.isFinite(lat)&&Number.isFinite(lng)&&lat!==0&&lng!==0)?{lat,lng}:null;
+    if(!coords&&address){coords=cache[address]||await locateAddress(address,geo);if(coords){cache[address]=coords;try{localStorage.setItem(cacheKey,JSON.stringify(cache))}catch(e){}}}
+    if(coords&&Number.isFinite(coords.lat)&&Number.isFinite(coords.lng)&&coords.lat>=-90&&coords.lat<=90&&coords.lng>=-180&&coords.lng<=180){
+     const point={id:String(r.id||Date.now()+'-'+i+'-'+Math.random()),name,address,lat:coords.lat,lng:coords.lng,state:['none','todo','done'].includes(r.state)?r.state:'todo'};
+     points.push(point);added.push(point);existing.add(address);success++;
+     const m=L.marker([point.lat,point.lng],{icon:pin(point)}).addTo(map).on('click',()=>openPoint(point.id));if(point.name)m.bindTooltip(point.name,{direction:'top',className:'address'});markers.push(m);
+     save();if(success===1)map.setView([point.lat,point.lng],13);
+    }else failed.push(address||name);
+    $('#status').textContent=`처리 ${i+1}/${rows.length} · 성공 ${success} · 실패 ${failed.length} · 중복 ${duplicates} (핀 즉시 표시)`;
+    if(i%10===0)await sleep(80);
+   }
+   if(added.length)map.fitBounds(L.latLngBounds(added.map(p=>[p.lat,p.lng])),{padding:[25,25],maxZoom:15});
+   save();$('#status').textContent=`${stopImport?'중지':'완료'} · 성공 ${success} · 실패 ${failed.length} · 중복 ${duplicates}`;
+   if(failed.length)downloadCsv('철이맵_실패주소.csv',failed);
+   alert(`핀 ${success}개 추가 / 실패 ${failed.length}개 / 중복 ${duplicates}개${stopImport?'\n중지된 상태입니다.':''}${failed.length?'\n실패 주소 목록을 내려받았습니다.':''}`);
+  }catch(err){$('#status').textContent='오류: '+err.message;alert('가져오기 실패: '+err.message)}
+  finally{$('#import').disabled=false;$('#stop').style.display='none';e.target.value=''}
+ };
 $('#searchbtn').onclick=()=>{$('#searchbox').style.display=$('#searchbox').style.display==='none'?'block':'none';setTimeout(()=>map.invalidateSize(),150)};
 $('#query').onkeydown=e=>{if(e.key==='Enter')$('#go').click()};
 $('#go').onclick=async()=>{const q=$('#query').value.trim();if(!q)return;$('#results').textContent='주소 검색 중...';try{
